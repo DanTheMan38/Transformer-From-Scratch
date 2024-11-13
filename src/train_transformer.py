@@ -7,7 +7,9 @@ import logging
 from transformer_model import TransformerModel
 
 # Set up logging configuration
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 def train_model():
     # Load the processed dataset from the 'processed_data' folder
@@ -22,6 +24,9 @@ def train_model():
 
     # Assign a pad_token to the tokenizer
     tokenizer.pad_token = tokenizer.eos_token
+    # Set the model_max_length
+    block_size = 128  # Ensure this matches the block_size used in data_preparation.py
+    tokenizer.model_max_length = block_size
 
     vocab_size = len(tokenizer)
 
@@ -29,28 +34,32 @@ def train_model():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
 
-    # Set block size to match your model's expected input size
-    block_size = 128  # Ensure this matches the block_size used in data_preparation.py
-
     # Create data loaders using DataCollatorWithPadding
     logging.info("Creating data loaders...")
     batch_size = 16  # Adjust based on your GPU memory
 
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
-        padding=True,
+        padding='longest',
         pad_to_multiple_of=block_size
     )
 
     def collate_fn(batch):
-        # Use DataCollatorWithPadding to pad input_ids and attention_mask
-        batch = data_collator(batch)
-        # Set labels to be the same as input_ids
-        batch['labels'] = batch['input_ids'].clone()
-        return batch
+        # Remove 'labels' from batch examples before padding
+        for example in batch:
+            example.pop('labels', None)
+        # Pad the batch
+        batch_padded = data_collator(batch)
+        # Set 'labels' equal to 'input_ids'
+        batch_padded['labels'] = batch_padded['input_ids'].clone()
+        return batch_padded
 
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, collate_fn=collate_fn)
+    train_dataloader = DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn
+    )
+    val_dataloader = DataLoader(
+        val_dataset, batch_size=batch_size, collate_fn=collate_fn
+    )
 
     # Define optimizer and loss function
     logging.info("Setting up optimizer and loss function...")
@@ -64,23 +73,28 @@ def train_model():
         model.train()
         total_loss = 0
         for batch_num, batch in enumerate(train_dataloader):
-            input_ids = batch['input_ids'].transpose(0, 1).to(device)  # Shape: [seq_length, batch_size]
+            input_ids = batch['input_ids'].transpose(0, 1).to(device)
             labels = batch['labels'].transpose(0, 1).to(device)
 
             optimizer.zero_grad()
             outputs = model(input_ids)
-            # Use reshape instead of view
-            loss = criterion(outputs.reshape(-1, vocab_size), labels.reshape(-1))
+            loss = criterion(
+                outputs.reshape(-1, vocab_size), labels.reshape(-1)
+            )
             loss.backward()
             optimizer.step()
 
             total_loss += loss.item()
 
             if batch_num % 100 == 0:
-                logging.info(f"Epoch [{epoch+1}/{epochs}], Batch [{batch_num}], Loss: {loss.item():.4f}")
+                logging.info(
+                    f"Epoch [{epoch+1}/{epochs}], Batch [{batch_num}], Loss: {loss.item():.4f}"
+                )
 
         avg_loss = total_loss / len(train_dataloader)
-        logging.info(f"Epoch [{epoch+1}/{epochs}] completed. Average Loss: {avg_loss:.4f}")
+        logging.info(
+            f"Epoch [{epoch+1}/{epochs}] completed. Average Loss: {avg_loss:.4f}"
+        )
 
         # Validation
         model.eval()
@@ -91,12 +105,15 @@ def train_model():
                 labels = batch['labels'].transpose(0, 1).to(device)
 
                 outputs = model(input_ids)
-                # Use reshape instead of view
-                loss = criterion(outputs.reshape(-1, vocab_size), labels.reshape(-1))
+                loss = criterion(
+                    outputs.reshape(-1, vocab_size), labels.reshape(-1)
+                )
                 val_loss += loss.item()
 
         avg_val_loss = val_loss / len(val_dataloader)
-        logging.info(f"Validation Loss after Epoch [{epoch+1}/{epochs}]: {avg_val_loss:.4f}")
+        logging.info(
+            f"Validation Loss after Epoch [{epoch+1}/{epochs}]: {avg_val_loss:.4f}"
+        )
 
     # Save the trained model
     logging.info("Training complete. Saving the model...")

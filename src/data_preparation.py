@@ -13,11 +13,15 @@ def load_and_prepare_data():
     logging.info("Initializing the tokenizer...")
     tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
-    # Tokenize the dataset
+    # Set model_max_length for tokenizer and enable truncation
+    block_size = 128  # Adjust as needed
+    tokenizer.model_max_length = block_size
+
+    # Tokenize the dataset with truncation and padding
     logging.info("Tokenizing the dataset...")
     def tokenize_function(examples):
         texts = [text if text is not None and text.strip() != "" else " " for text in examples["text"]]
-        return tokenizer(texts, truncation=False, padding=False)
+        return tokenizer(texts, truncation=True, max_length=block_size, padding=False)
 
     tokenized_datasets = dataset.map(
         tokenize_function,
@@ -27,8 +31,6 @@ def load_and_prepare_data():
 
     # Group texts into chunks for training
     logging.info("Grouping texts into chunks for training...")
-    block_size = 128  # Adjust as needed
-
     def group_texts(examples):
         concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
         total_length = len(concatenated_examples["input_ids"])
