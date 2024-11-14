@@ -30,7 +30,14 @@ def train_model():
 
     vocab_size = len(tokenizer)
 
-    model = TransformerModel(vocab_size=vocab_size)
+    model = TransformerModel(
+        vocab_size=vocab_size,
+        embed_size=512,
+        num_heads=8,
+        hidden_dim=2048,
+        num_layers=6,
+        dropout=0.1
+    )
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
 
@@ -50,8 +57,18 @@ def train_model():
             example.pop('labels', None)
         # Pad the batch
         batch_padded = data_collator(batch)
-        # Set 'labels' equal to 'input_ids'
-        batch_padded['labels'] = batch_padded['input_ids'].clone()
+        # Set 'labels' equal to 'input_ids' shifted by one position
+        input_ids = batch_padded['input_ids']
+        labels = input_ids.clone()
+
+        # Shift inputs and labels
+        input_ids = input_ids[:, :-1]
+        labels = labels[:, 1:]
+
+        # Update batch_padded with shifted inputs and labels
+        batch_padded['input_ids'] = input_ids
+        batch_padded['labels'] = labels
+
         return batch_padded
 
     train_dataloader = DataLoader(
@@ -64,24 +81,31 @@ def train_model():
     # Define optimizer and loss function
     logging.info("Setting up optimizer and loss function...")
     optimizer = torch.optim.Adam(model.parameters(), lr=5e-5)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
 
     # Training loop
-    epochs = 3  # Adjust the number of epochs as needed
+    epochs = 5  # Increased the number of epochs for better training
     logging.info("Starting training...")
     for epoch in range(epochs):
         model.train()
         total_loss = 0
         for batch_num, batch in enumerate(train_dataloader):
-            input_ids = batch['input_ids'].transpose(0, 1).to(device)
-            labels = batch['labels'].transpose(0, 1).to(device)
+            input_ids = batch['input_ids'].transpose(0, 1).to(device)  # Shape: [seq_length, batch_size]
+            labels = batch['labels'].transpose(0, 1).to(device)        # Shape: [seq_length, batch_size]
 
             optimizer.zero_grad()
-            outputs = model(input_ids)
-            loss = criterion(
-                outputs.reshape(-1, vocab_size), labels.reshape(-1)
-            )
+            outputs = model(input_ids)                                 # Shape: [seq_length, batch_size, vocab_size]
+
+            # Reshape outputs and labels for loss computation
+            outputs = outputs.view(-1, vocab_size)                     # Shape: [seq_length * batch_size, vocab_size]
+            labels = labels.reshape(-1)                                # Shape: [seq_length * batch_size]
+
+            loss = criterion(outputs, labels)
             loss.backward()
+
+            # Gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
             optimizer.step()
 
             total_loss += loss.item()
@@ -105,9 +129,10 @@ def train_model():
                 labels = batch['labels'].transpose(0, 1).to(device)
 
                 outputs = model(input_ids)
-                loss = criterion(
-                    outputs.reshape(-1, vocab_size), labels.reshape(-1)
-                )
+                outputs = outputs.view(-1, vocab_size)
+                labels = labels.reshape(-1)
+
+                loss = criterion(outputs, labels)
                 val_loss += loss.item()
 
         avg_val_loss = val_loss / len(val_dataloader)
@@ -117,7 +142,7 @@ def train_model():
 
     # Save the trained model
     logging.info("Training complete. Saving the model...")
-    torch.save(model.state_dict(), "transformer_model.pth")
+    torch.save(model.state_dict(), "models/transformer_model.pth")
     logging.info("Model saved successfully.")
 
 if __name__ == "__main__":

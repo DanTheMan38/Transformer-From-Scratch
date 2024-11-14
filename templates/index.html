@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Transformer Text Generator</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto&display=swap">
+</head>
+<body>
+    <div class="container">
+        <h1>Transformer Text Generator</h1>
+        <form action="/generate" method="post">
+            <label for="prompt">Enter your prompt:</label>
+            <textarea name="prompt" placeholder="Type your prompt here...">{{ prompt | default('') }}</textarea>
+            <label for="max_length">Max Length:</label>
+            <input type="number" name="max_length" value="50" min="1" max="1000">
+            <button type="submit">Generate</button>
+        </form>
+        {% if result %}
+        <div class="result">
+            <h2>Generated Text:</h2>
+            <p>{{ result }}</p>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
