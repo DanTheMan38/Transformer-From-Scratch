@@ -19,18 +19,14 @@ def evaluate(model, dataloader, device, tokenizer):
 
     with torch.no_grad():
         for batch in dataloader:
-            input_ids = batch['input_ids'].to(device)      # Shape: [batch_size, seq_length]
-            labels = batch['labels'].to(device)            # Shape: [batch_size, seq_length]
+            input_ids = batch['input_ids'].transpose(0, 1).to(device)  # Shape: [seq_length, batch_size]
+            labels = batch['labels'].transpose(0, 1).to(device)        # Shape: [seq_length, batch_size]
 
-            # Transpose to match model input shape [seq_length, batch_size]
-            input_ids = input_ids.transpose(0, 1)          # Shape: [seq_length, batch_size]
-            labels = labels.transpose(0, 1)                # Shape: [seq_length, batch_size]
-
-            outputs = model(input_ids)                     # Outputs shape: [seq_length, batch_size, vocab_size]
+            outputs = model(input_ids)                                 # Outputs shape: [seq_length, batch_size, vocab_size]
 
             # Reshape for loss computation
-            outputs = outputs.view(-1, outputs.size(-1))   # Shape: [seq_length * batch_size, vocab_size]
-            labels = labels.reshape(-1)                    # Shape: [seq_length * batch_size]
+            outputs = outputs.view(-1, outputs.size(-1))               # Shape: [seq_length * batch_size, vocab_size]
+            labels = labels.reshape(-1)                                # Shape: [seq_length * batch_size]
 
             loss = criterion(outputs, labels)
             total_loss += loss.item()
@@ -53,7 +49,10 @@ def generate_sample_outputs(model, tokenizer, device, prompts, max_length=100):
 
         with torch.no_grad():
             for _ in range(max_length):
-                outputs = model(generated)  # Outputs shape: [seq_length, batch_size, vocab_size]
+                seq_len = generated.size(0)
+                src_mask = model.generate_square_subsequent_mask(seq_len).to(device)
+
+                outputs = model(generated, src_mask=src_mask)  # Outputs shape: [seq_length, batch_size, vocab_size]
                 next_token_logits = outputs[-1, 0, :]  # Logits for the last token
 
                 # Apply temperature scaling
@@ -66,21 +65,10 @@ def generate_sample_outputs(model, tokenizer, device, prompts, max_length=100):
 
                 # Filter logits using top_k
                 if top_k > 0:
-                    top_k = min(top_k, next_token_logits.size(-1))
-                    indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k)[0][..., -1, None]
-                    next_token_logits[indices_to_remove] = -float('Inf')
+                    next_token_logits = top_k_logits(next_token_logits, top_k)
 
                 # Filter logits using nucleus (top-p)
-                sorted_logits, sorted_indices = torch.sort(next_token_logits, descending=True)
-                cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-
-                # Remove tokens with cumulative probability above the threshold
-                sorted_indices_to_remove = cumulative_probs > top_p
-                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-                sorted_indices_to_remove[..., 0] = 0
-
-                indices_to_remove = sorted_indices[sorted_indices_to_remove]
-                next_token_logits[indices_to_remove] = -float('Inf')
+                next_token_logits = top_p_logits(next_token_logits, top_p)
 
                 # Re-normalize probabilities
                 probabilities = F.softmax(next_token_logits, dim=-1)
@@ -95,10 +83,29 @@ def generate_sample_outputs(model, tokenizer, device, prompts, max_length=100):
                 if next_token_id.item() == tokenizer.eos_token_id:
                     break
 
-            # Convert generated tokens to a list and decode
-            generated_ids = generated.squeeze(1).tolist()  # Shape: [seq_length + generated_tokens]
-            generated_text = tokenizer.decode(generated_ids)
-            logging.info(f"Generated Text: {generated_text}\n")
+        # Convert generated tokens to a list and decode
+        generated_ids = generated.squeeze(1).tolist()  # Shape: [seq_length + generated_tokens]
+        generated_text = tokenizer.decode(generated_ids)
+        logging.info(f"Generated Text: {generated_text}\n")
+
+def top_k_logits(logits, k):
+    v, ix = torch.topk(logits, k)
+    out = logits.clone()
+    out[out < v[..., -1, None]] = -float('Inf')
+    return out
+
+def top_p_logits(logits, p):
+    sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+    cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+
+    # Remove tokens with cumulative probability above the threshold
+    sorted_indices_to_remove = cumulative_probs > p
+    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+    sorted_indices_to_remove[..., 0] = 0
+
+    indices_to_remove = sorted_indices[sorted_indices_to_remove]
+    logits[indices_to_remove] = -float('Inf')
+    return logits
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -122,9 +129,13 @@ def main():
 
         # Pad sequences to the maximum length in the batch
         input_ids_padded = pad_sequence(input_ids, batch_first=True, padding_value=tokenizer.pad_token_id)
-        labels_padded = pad_sequence(labels, batch_first=True, padding_value=tokenizer.pad_token_id)  # Use pad_token_id to ignore in loss
+        labels_padded = pad_sequence(labels, batch_first=True, padding_value=tokenizer.pad_token_id)
 
-        return {'input_ids': input_ids_padded, 'labels': labels_padded}
+        # Shift inputs and labels
+        input_ids_shifted = input_ids_padded[:, :-1]
+        labels_shifted = labels_padded[:, 1:]
+
+        return {'input_ids': input_ids_shifted, 'labels': labels_shifted}
 
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=collate_fn)
 

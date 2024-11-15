@@ -33,10 +33,16 @@ class TransformerModel(nn.Module):
         self.embed_size = embed_size
         self.embedding = nn.Embedding(vocab_size, embed_size)
         self.pos_encoder = PositionalEncoding(embed_size, dropout)
-        encoder_layers = nn.TransformerEncoderLayer(
-            d_model=embed_size, nhead=num_heads, dim_feedforward=hidden_dim, dropout=dropout
+        self.transformer_encoder = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=embed_size,
+                nhead=num_heads,
+                dim_feedforward=hidden_dim,
+                dropout=dropout,
+                batch_first=False  # Ensure batch_first is False for consistency
+            ),
+            num_layers=num_layers
         )
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers)
         self.fc_out = nn.Linear(embed_size, vocab_size)
         self.dropout = nn.Dropout(dropout)
 
@@ -51,12 +57,21 @@ class TransformerModel(nn.Module):
         self.fc_out.weight.data.uniform_(-initrange, initrange)
         logging.info("Weights initialized.")
 
+    def generate_square_subsequent_mask(self, sz):
+        # Generates an upper-triangular matrix of -inf, with zeros on the diagonal.
+        mask = torch.triu(torch.ones(sz, sz), diagonal=1).to(torch.bool)
+        return mask
+
     def forward(self, src, src_mask=None):
         # src shape: [seq_length, batch_size]
         logging.debug(f"Input shape: {src.shape}")
         src = self.embedding(src) * math.sqrt(self.embed_size)
         src = self.pos_encoder(src)
-        output = self.transformer_encoder(src, src_mask)
+        if src_mask is None:
+            device = src.device
+            seq_len = src.size(0)
+            src_mask = self.generate_square_subsequent_mask(seq_len).to(device)
+        output = self.transformer_encoder(src, src_mask=src_mask)
         logits = self.fc_out(output)
         logging.debug(f"Output shape: {logits.shape}")
         return logits  # Shape: [seq_length, batch_size, vocab_size]
