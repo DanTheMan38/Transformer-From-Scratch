@@ -56,11 +56,11 @@ def generate_sample_outputs(model, tokenizer, device, prompts, max_length=100):
                 next_token_logits = outputs[-1, 0, :]  # Logits for the last token
 
                 # Apply temperature scaling
-                temperature = 1.0  # Adjust this value as needed
+                temperature = 0.7  # Adjust this value as needed
                 next_token_logits = next_token_logits / temperature
 
                 # Apply top-k and nucleus (top-p) sampling
-                top_k = 50  # Adjust as needed
+                top_k = 40  # Adjust as needed
                 top_p = 0.9  # Adjust as needed
 
                 # Filter logits using top_k

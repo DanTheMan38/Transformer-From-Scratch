@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from transformers import GPT2Tokenizer, DataCollatorWithPadding
 import logging
 from transformer_model import TransformerModel
+import os
 
 # Set up logging configuration
 logging.basicConfig(
@@ -40,6 +41,14 @@ def train_model():
     )
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
+
+    # Check if a saved model exists
+    model_path = "models/transformer_model.pth"
+    if os.path.exists(model_path):
+        logging.info(f"Loading saved model weights from {model_path}...")
+        model.load_state_dict(torch.load(model_path, map_location=device))
+    else:
+        logging.info("No saved model found. Starting from scratch.")
 
     # Create data loaders using DataCollatorWithPadding
     logging.info("Creating data loaders...")
@@ -80,7 +89,8 @@ def train_model():
 
     # Define optimizer and loss function
     logging.info("Setting up optimizer and loss function...")
-    optimizer = torch.optim.Adam(model.parameters(), lr=5e-5)
+    optimizer = torch.optim.Adam(model.parameters(), lr=2.5e-5)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
 
     # Training loop
@@ -139,6 +149,9 @@ def train_model():
         logging.info(
             f"Validation Loss after Epoch [{epoch+1}/{epochs}]: {avg_val_loss:.4f}"
         )
+
+        # Update the scheduler
+        scheduler.step(avg_val_loss)
 
     # Save the trained model
     logging.info("Training complete. Saving the model...")
