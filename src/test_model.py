@@ -56,7 +56,7 @@ def generate_sample_outputs(model, tokenizer, device, prompts, max_length=100):
                 next_token_logits = outputs[-1, 0, :]  # Logits for the last token
 
                 # Apply temperature scaling
-                temperature = 0.7  # Adjust this value as needed
+                temperature = 0.6  # Adjust this value as needed
                 next_token_logits = next_token_logits / temperature
 
                 # Apply top-k and nucleus (top-p) sampling
@@ -160,11 +160,47 @@ def main():
 
     # Generate sample outputs
     sample_prompts = [
-        "The future of artificial intelligence is",
-        "Once upon a time in a land far away",
-        "The quick brown fox jumps over",
-        "In conclusion, we can say that",
-        "The benefits of exercise include"
+        # Conversational or Simple Prompts
+        "Hello?",
+        "What is your name?",
+        "Can you explain how this works?",
+        "Tell me something interesting.",
+        "How do you feel today?",
+        
+        # Factual or Encyclopedic Prompts
+        "The capital city of France is",
+        "Albert Einstein is known for",
+        "The Great Wall of China was built during",
+        "Photosynthesis is the process by which",
+        "The theory of evolution states that",
+
+        # Literary or Creative Prompts
+        "It was the best of times, it was",
+        "In a galaxy far, far away,",
+        "As the sun set over the hills,",
+        "The protagonist of the story is",
+        "Beneath the ocean’s waves lies",
+
+        # Reflective or Philosophical Prompts
+        "The meaning of life is",
+        "Happiness can be found when",
+        "The difference between right and wrong is",
+        "In a perfect world, there would be",
+        "The most important lesson I learned is",
+
+        # Historical Prompts
+        "During World War II,",
+        "The invention of the wheel led to",
+        "The Renaissance period was characterized by",
+        "The Industrial Revolution changed society by",
+        "The discovery of electricity was",
+
+        # Questions
+        "Why is the sky blue?",
+        "What happens when we sleep?",
+        "Who was the first person to walk on the moon?",
+        "Where do rainbows come from?",
+        "When did dinosaurs go extinct?"
     ]
 
     logging.info("Generating sample outputs...")
