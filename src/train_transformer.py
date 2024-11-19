@@ -89,12 +89,12 @@ def train_model():
 
     # Define optimizer and loss function
     logging.info("Setting up optimizer and loss function...")
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+    optimizer = torch.optim.Adam(model.parameters(), lr=5e-6)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
 
     # Training loop
-    epochs = 5  # Increased the number of epochs for better training
+    epochs = 15  # Increased the number of epochs for better training
     logging.info("Starting training...")
     for epoch in range(epochs):
         model.train()
