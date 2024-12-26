@@ -1,56 +1,47 @@
-from datasets import load_dataset
 from transformers import GPT2Tokenizer
 import logging
+import pandas as pd
+import os
 
+# Configure logging at the very beginning
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def load_and_prepare_data():
-    # Load the dataset
     logging.info("Loading the dataset...")
-    dataset = load_dataset("wikitext", "wikitext-2-raw-v1")
+
+    # Load your CSV file
+    csv_file_path = "../processed_data/dictionary_data.csv"
+    data = pd.read_csv(csv_file_path)
+    
+    # Assuming the CSV contains 'Title' and 'Description' columns
+    texts = (data['Title'] + ": " + data['Description']).tolist()
 
     # Initialize the tokenizer
     logging.info("Initializing the tokenizer...")
     tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
-    # Set model_max_length for tokenizer and enable truncation
     block_size = 128  # Adjust as needed
     tokenizer.model_max_length = block_size
 
-    # Tokenize the dataset with truncation and padding
     logging.info("Tokenizing the dataset...")
-    def tokenize_function(examples):
-        texts = [text if text is not None and text.strip() != "" else " " for text in examples["text"]]
-        return tokenizer(texts, truncation=True, max_length=block_size, padding=False)
+    tokenized_texts = []
+    for text in texts:
+        tokenized = tokenizer(text, truncation=True, max_length=block_size, padding=False)
+        tokenized_texts.append(tokenized["input_ids"])
 
-    tokenized_datasets = dataset.map(
-        tokenize_function,
-        batched=True,
-        remove_columns=["text"]
-    )
-
-    # Group texts into chunks for training
     logging.info("Grouping texts into chunks for training...")
-    def group_texts(examples):
-        concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
-        total_length = len(concatenated_examples["input_ids"])
-        # Instead of discarding the last chunk, we include it even if it's shorter
+    def group_texts(tokenized_texts):
+        concatenated = sum(tokenized_texts, [])
         result = {
-            k: [concatenated_examples[k][i: i + block_size] for i in range(0, total_length, block_size)]
-            for k in concatenated_examples.keys()
+            "input_ids": [
+                concatenated[i: i + block_size]
+                for i in range(0, len(concatenated), block_size)
+            ]
         }
-        result["labels"] = result["input_ids"].copy()
+        result["labels"] = result["input_ids"]
         return result
 
-    lm_datasets = tokenized_datasets.map(
-        group_texts,
-        batched=True
-    )
-
-    # Log the number of examples in each split
-    logging.info(f"Number of examples in train: {len(lm_datasets['train'])}")
-    logging.info(f"Number of examples in validation: {len(lm_datasets['validation'])}")
-    logging.info(f"Number of examples in test: {len(lm_datasets['test'])}")
+    lm_datasets = group_texts(tokenized_texts)
 
     logging.info("Data preparation is complete.")
     return lm_datasets
@@ -59,5 +50,9 @@ if __name__ == "__main__":
     logging.info("Starting data preparation...")
     lm_datasets = load_and_prepare_data()
     logging.info("Saving processed data to disk...")
-    lm_datasets.save_to_disk("processed_data")
+    # Save the tokenized data
+    os.makedirs("processed_data", exist_ok=True)
+    with open("processed_data/train.txt", "w", encoding="utf-8") as file:
+        for chunk in lm_datasets["input_ids"]:
+            file.write(" ".join(map(str, chunk)) + "\n")
     logging.info("Processed data saved successfully.")
